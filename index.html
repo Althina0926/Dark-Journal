@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Journal - Minimalist Timeline</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-midnight: #050505;
+            --color-glass-bg: rgba(255, 255, 255, 0.04);
+            --color-glass-border: rgba(255, 255, 255, 0.08);
+            --color-text-main: #E0E0E0;
+            --color-text-dim: #888888;
+            --color-accent-star: #FFD700;
+        }
+
+        body {
+            background-color: var(--color-midnight);
+            color: var(--color-text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        .font-serif {
+            font-family: 'Cormorant Garamond', serif;
+        }
+
+        .frosted-glass {
+            background: var(--color-glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--color-glass-border);
+        }
+
+        .completed-card {
+            opacity: 0.4;
+            filter: grayscale(1);
+        }
+
+        .strikethrough {
+            text-decoration: line-through;
+            opacity: 0.6;
+        }
+
+        /* 隱藏捲軸但保留功能 */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+        input, textarea {
+            background: transparent;
+            outline: none;
+            border: none;
+        }
+
+        .mood-btn.active {
+            color: var(--color-text-main);
+            transform: scale(1.1);
+        }
+        
+        .filter-btn.active {
+            background: var(--color-text-main);
+            color: var(--color-midnight);
+            border-color: var(--color-text-main);
+        }
+
+        .status-tab.active {
+            background: var(--color-text-main);
+            color: var(--color-midnight);
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="h-20 flex items-center justify-between px-6 md:px-10 border-b border-[rgba(255,255,255,0.08)] sticky top-0 z-30 bg-[#050505]/50 backdrop-blur-md">
+            <div class="flex flex-col">
+                <div class="text-3xl font-serif italic tracking-[1px]">Dark Journal</div>
+                <div id="journal-id-label" class="text-[9px] text-[rgba(255,255,255,0.4)] uppercase tracking-[3px]">Local Records</div>
+            </div>
+            
+            <div class="hidden md:flex relative w-72">
+                <svg class="absolute left-4 top-1/2 -translate-y-1/2 text-[rgba(255,255,255,0.4)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input 
+                    type="text" 
+                    id="search-input"
+                    placeholder="搜尋過去的記憶..."
+                    class="w-full frosted-glass rounded-full py-2 pl-10 pr-4 text-sm text-[var(--color-text-main)] focus:border-[rgba(255,255,255,0.2)] transition-colors"
+                >
+            </div>
+
+            <div class="flex items-center gap-4">
+                <div class="flex bg-[#050505] rounded-full p-1 border border-[rgba(255,255,255,0.08)]">
+                    <button onclick="setStatusFilter('active')" class="status-tab px-3 py-1 rounded-full text-[10px] active transition-all" data-status="active">已發布</button>
+                    <button onclick="setStatusFilter('completed')" class="status-tab px-3 py-1 rounded-full text-[10px] transition-all" data-status="completed">已完成</button>
+                    <button onclick="setStatusFilter('draft')" class="status-tab px-3 py-1 rounded-full text-[10px] transition-all" data-status="draft">草稿</button>
+                    <button onclick="setStatusFilter('archived')" class="status-tab px-3 py-1 rounded-full text-[10px] transition-all" data-status="archived">封存</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] divide-x divide-[rgba(255,255,255,0.08)]">
+            <!-- Left: Composer -->
+            <section id="composer-section" class="hidden lg:flex flex-col p-10 gap-6 sticky top-20 h-[calc(100vh-80px)] overflow-y-auto bg-[#050505] z-40">
+                <div class="flex items-center justify-between">
+                    <div class="text-[0.7rem] text-[rgba(255,255,255,0.4)] uppercase tracking-[1px]">撰寫新日記 / Write Comment</div>
+                    <button onclick="toggleMobileComposer()" class="lg:hidden p-2 text-[rgba(255,255,255,0.4)]">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
+                
+                <div class="flex-1 flex flex-col gap-6">
+                    <div class="flex gap-4">
+                        <button onclick="setEntryStatus('active')" id="btn-status-active" class="text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-[var(--color-text-main)] bg-[var(--color-text-main)] text-[var(--color-midnight)]">直接發布</button>
+                        <button onclick="setEntryStatus('draft')" id="btn-status-draft" class="text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-transparent text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.08)]">存為草稿</button>
+                    </div>
+
+                    <textarea
+                        id="entry-content"
+                        placeholder="在此寫下你的日記或想法... (Write your story here)"
+                        class="flex-1 frosted-glass rounded-xl p-5 text-[1.1rem] leading-[1.6] text-[var(--color-text-main)] resize-none min-h-[250px]"
+                    ></textarea>
+
+                    <div class="flex justify-between py-2" id="mood-selector">
+                        <button onclick="setMood('happy')" class="mood-btn flex flex-col items-center gap-1.5 text-[0.75rem] text-[rgba(255,255,255,0.4)] active" data-mood="happy">
+                            <span class="text-2xl">😊</span><span>開心</span>
+                        </button>
+                        <button onclick="setMood('neutral')" class="mood-btn flex flex-col items-center gap-1.5 text-[0.75rem] text-[rgba(255,255,255,0.4)]" data-mood="neutral">
+                            <span class="text-2xl">😐</span><span>平常</span>
+                        </button>
+                        <button onclick="setMood('tired')" class="mood-btn flex flex-col items-center gap-1.5 text-[0.75rem] text-[rgba(255,255,255,0.4)]" data-mood="tired">
+                            <span class="text-2xl">😫</span><span>累了</span>
+                        </button>
+                        <button onclick="setMood('sad')" class="mood-btn flex flex-col items-center gap-1.5 text-[0.75rem] text-[rgba(255,255,255,0.4)]" data-mood="sad">
+                            <span class="text-2xl">🌧️</span><span>憂鬱</span>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2 text-[0.9rem] text-[#55acee]">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>
+                            <input type="text" id="entry-tags" placeholder="標籤 (例如: #學習)" class="text-sm w-32">
+                        </div>
+                        <button onclick="handleSave()" class="bg-[var(--color-text-main)] text-[var(--color-midnight)] px-6 py-2.5 rounded-lg font-semibold hover:bg-white transition-colors shadow-lg">紀錄這刻</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right: Timeline -->
+            <section class="p-6 md:p-10 flex flex-col gap-8 overflow-y-auto relative">
+                <!-- Mobile Floating Button -->
+                <button onclick="toggleMobileComposer()" class="lg:hidden fixed bottom-8 right-8 w-14 h-14 bg-[var(--color-text-main)] text-[var(--color-midnight)] rounded-full flex items-center justify-center shadow-2xl z-50">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-2xl font-serif italic" id="timeline-title">回憶時光軸</h2>
+                    <span class="text-[0.75rem] text-[rgba(255,255,255,0.4)] font-serif" id="record-count">共計 0 篇日記</span>
+                </div>
+
+                <!-- Mood Filter Chips -->
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="setMoodFilter('all')" class="filter-btn active px-3.5 py-1.5 rounded-full text-xs border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.4)]" data-filter="all">全部</button>
+                    <button onclick="setMoodFilter('happy')" class="filter-btn px-3.5 py-1.5 rounded-full text-xs border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.4)]" data-filter="happy">😊 開心</button>
+                    <button onclick="setMoodFilter('neutral')" class="filter-btn px-3.5 py-1.5 rounded-full text-xs border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.4)]" data-filter="neutral">😐 平常</button>
+                    <button onclick="setMoodFilter('tired')" class="filter-btn px-3.5 py-1.5 rounded-full text-xs border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.4)]" data-filter="tired">😫 累了</button>
+                    <button onclick="setMoodFilter('sad')" class="filter-btn px-3.5 py-1.5 rounded-full text-xs border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.4)]" data-filter="sad">🌧️ 憂鬱</button>
+                </div>
+
+                <div id="journal-list" class="flex flex-col gap-5">
+                    <!-- Cards will be injected here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // --- 核心邏輯 ---
+        let currentMood = 'happy';
+        let currentEntryStatus = 'active';
+        let filterStatus = 'active';
+        let filterMood = 'all';
+        let searchQuery = '';
+
+        // 【規則 6】3 個分離 function：saveData, loadData, renderList
+        
+        function saveData(newRecord) {
+            const records = loadData();
+            records.unshift(newRecord);
+            // 【規則 5】localStorage key 固定叫 "records"
+            localStorage.setItem('records', JSON.stringify(records));
+        }
+
+        function loadData() {
+            const raw = localStorage.getItem('records');
+            return raw ? JSON.parse(raw) : [];
+        }
+
+        function renderList() {
+            const records = loadData();
+            const listContainer = document.getElementById('journal-list');
+            const countLabel = document.getElementById('record-count');
+            
+            // 篩選邏輯
+            const filtered = records.filter(r => {
+                const matchesStatus = r.status === filterStatus;
+                const matchesMood = filterMood === 'all' || r.mood === filterMood;
+                const matchesSearch = r.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                     r.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+                return matchesStatus && matchesMood && matchesSearch;
+            });
+
+            countLabel.innerText = `共計 ${filtered.length} 篇日記`;
+            listContainer.innerHTML = '';
+
+            if (filtered.length === 0) {
+                listContainer.innerHTML = `<div class="text-center py-20 text-[rgba(255,255,255,0.4)] italic">這裡空蕩蕩的...</div>`;
+                return;
+            }
+
+            filtered.forEach(r => {
+                const date = new Date(r.createdAt);
+                const dateStr = `${date.getFullYear()} / ${String(date.getMonth()+1).padStart(2,'0')} / ${String(date.getDate()).padStart(2,'0')}`;
+                const timeStr = `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                
+                const card = document.createElement('article');
+                card.className = `frosted-glass rounded-2xl p-6 relative group transition-all duration-500 ${r.status === 'completed' ? 'completed-card' : ''}`;
+                
+                const moodEmoji = { happy: '😊', neutral: '😐', tired: '😫', sad: '🌧️' }[r.mood];
+                const moodLabel = { happy: '開心', neutral: '平常', tired: '累了', sad: '憂鬱' }[r.mood];
+
+                card.innerHTML = `
+                    <button onclick="toggleFavorite('${r.id}')" class="absolute top-6 right-6 transition-colors ${r.isFavorite ? 'text-[var(--color-accent-star)]' : 'text-[rgba(255,255,255,0.4)] hover:text-[var(--color-text-main)]'}">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="${r.isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    </button>
+                    <div class="flex justify-between mb-3 text-[0.8rem] text-[rgba(255,255,255,0.4)]">
+                        <div class="flex items-center gap-2">
+                            <span class="${r.status === 'completed' ? 'strikethrough' : ''}">${dateStr}</span>
+                            <span class="font-mono opacity-60">${timeStr}</span>
+                            ${r.status === 'completed' ? '<svg class="text-[var(--color-text-main)] ml-1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
+                        </div>
+                        <span class="mr-8">${moodEmoji} ${moodLabel}</span>
+                    </div>
+                    <div class="text-[1.05rem] leading-[1.8] text-[var(--color-text-main)] whitespace-pre-wrap transition-all ${r.status === 'completed' ? 'strikethrough opacity-60' : ''}">${r.content}</div>
+                    <div class="flex items-center justify-between mt-4">
+                        <div class="flex flex-wrap gap-2">
+                            ${r.tags.map(t => `<span class="text-[0.75rem] text-[#55acee] opacity-80">#${t}</span>`).join('')}
+                        </div>
+                        <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            ${renderActionButtons(r)}
+                            <button onclick="deleteRecord('${r.id}')" class="p-1 text-[rgba(255,255,255,0.4)] hover:text-red-500 transition-colors">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        function renderActionButtons(r) {
+            if (r.status === 'draft') {
+                return `<button onclick="updateStatus('${r.id}', 'active')" class="text-[10px] uppercase font-bold text-[var(--color-text-main)] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded hover:bg-[rgba(255,255,255,0.04)]">發布</button>`;
+            }
+            if (r.status === 'active') {
+                return `
+                    <button onclick="updateStatus('${r.id}', 'completed')" class="text-[10px] uppercase font-bold text-[var(--color-text-main)] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded hover:bg-[rgba(255,255,255,0.04)]">完成</button>
+                    <button onclick="updateStatus('${r.id}', 'archived')" class="text-[10px] uppercase font-bold text-[rgba(255,255,255,0.4)] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded hover:bg-[rgba(255,255,255,0.04)]">封存</button>
+                `;
+            }
+            if (r.status === 'completed') {
+                return `<button onclick="updateStatus('${r.id}', 'active')" class="text-[10px] uppercase font-bold text-[var(--color-text-main)] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded hover:bg-[rgba(255,255,255,0.04)]">未完成</button>`;
+            }
+            if (r.status === 'archived') {
+                return `<button onclick="updateStatus('${r.id}', 'active')" class="text-[10px] uppercase font-bold text-[var(--color-text-main)] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded hover:bg-[rgba(255,255,255,0.04)]">還原</button>`;
+            }
+            return '';
+        }
+
+        // --- 互動 Function ---
+
+        function toggleMobileComposer() {
+            const composer = document.getElementById('composer-section');
+            if (composer.classList.contains('hidden')) {
+                composer.classList.remove('hidden', 'lg:flex');
+                composer.classList.add('fixed', 'inset-0', 'flex', 'h-full', 'w-full');
+            } else {
+                composer.classList.add('hidden', 'lg:flex');
+                composer.classList.remove('fixed', 'inset-0', 'flex', 'h-full', 'w-full');
+            }
+        }
+
+        // 修改 handleSave，在儲存後如果是手機模式則自動關閉
+        function handleSave() {
+            const content = document.getElementById('entry-content').value.trim();
+            const tagsInput = document.getElementById('entry-tags').value;
+            if (!content) return;
+
+            const tags = tagsInput.split(/[,\s]+/)
+                .filter(t => t.startsWith('#')).map(t => t.slice(1)).filter(t => t.length > 0);
+
+            // 【規則 4】Data Schema 要求
+            const newRecord = {
+                id: Date.now() + "_" + Math.random().toString(36).slice(2, 6), // ID 規則
+                createdAt: new Date().toISOString(), // ISO String
+                content: content,
+                mood: currentMood,
+                tags: tags,
+                isFavorite: false,
+                status: currentEntryStatus 
+            };
+
+            saveData(newRecord);
+            
+            // 重置 Form
+            document.getElementById('entry-content').value = '';
+            document.getElementById('entry-tags').value = '';
+            
+            // 如果是在手機彈窗模式，儲存後關閉
+            const composer = document.getElementById('composer-section');
+            if (composer.classList.contains('fixed')) {
+                toggleMobileComposer();
+            }
+            
+            renderList();
+        }
+
+        function updateStatus(id, newStatus) {
+            const records = loadData();
+            const index = records.findIndex(r => r.id === id);
+            if (index !== -1) {
+                records[index].status = newStatus;
+                localStorage.setItem('records', JSON.stringify(records));
+                renderList();
+            }
+        }
+
+        function toggleFavorite(id) {
+            const records = loadData();
+            const index = records.findIndex(r => r.id === id);
+            if (index !== -1) {
+                records[index].isFavorite = !records[index].isFavorite;
+                localStorage.setItem('records', JSON.stringify(records));
+                renderList();
+            }
+        }
+
+        function deleteRecord(id) {
+            if (!confirm('確定要刪除這篇回憶嗎？')) return;
+            let records = loadData();
+            records = records.filter(r => r.id !== id);
+            localStorage.setItem('records', JSON.stringify(records));
+            renderList();
+        }
+
+        // --- UI 控制 ---
+
+        function setMood(mood) {
+            currentMood = mood;
+            document.querySelectorAll('.mood-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mood === mood);
+            });
+        }
+
+        function setEntryStatus(status) {
+            currentEntryStatus = status;
+            document.getElementById('btn-status-active').className = status === 'active' ? 
+                'text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-[var(--color-text-main)] bg-[var(--color-text-main)] text-[var(--color-midnight)]' : 
+                'text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-transparent text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.08)]';
+            
+            document.getElementById('btn-status-draft').className = status === 'draft' ? 
+                'text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-[var(--color-text-main)] bg-[var(--color-text-main)] text-[var(--color-midnight)]' : 
+                'text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-transparent text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.08)]';
+        }
+
+        function setStatusFilter(status) {
+            filterStatus = status;
+            document.querySelectorAll('.status-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.status === status);
+            });
+            renderList();
+        }
+
+        function setMoodFilter(mood) {
+            filterMood = mood;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === mood);
+            });
+            renderList();
+        }
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            renderList();
+        });
+
+        // 初始化
+        window.onload = renderList;
+    </script>
+</body>
+</html>
