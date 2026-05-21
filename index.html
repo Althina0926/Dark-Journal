@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dark Journal - Minimalist Timeline</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -89,6 +90,11 @@
             </div>
 
             <div class="flex items-center gap-4">
+                <button onclick="handleAISummary()" id="aiBtn" class="flex items-center gap-2 bg-zinc-800 text-zinc-100 px-4 py-2 rounded-full font-medium hover:bg-zinc-700 transition-colors active:scale-95 border border-zinc-700 disabled:opacity-50">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <span id="aiBtnText">AI 摘要</span>
+                </button>
+
                 <div class="flex bg-[#050505] rounded-full p-1 border border-[rgba(255,255,255,0.08)]">
                     <button onclick="setStatusFilter('active')" class="status-tab px-3 py-1 rounded-full text-[10px] active transition-all" data-status="active">已發布</button>
                     <button onclick="setStatusFilter('completed')" class="status-tab px-3 py-1 rounded-full text-[10px] transition-all" data-status="completed">已完成</button>
@@ -168,12 +174,9 @@
     </div>
 
     <script>
-        /**
-         * 重要：在此處貼上你的 Google Apps Script URL
-         */
         const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwqLelMj_nnCW-PbGI4Wf-LjlhBFcZ-xIVCzGLFv_eDa2UTpc5kLNV8aNZrhd_Y6m7W/exec";
 
-        // --- 同步 Helper ---
+        // --- 同步與 GET Helper ---
         async function syncToSheet(payload) {
             if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE")) return;
             try {
@@ -187,6 +190,67 @@
             }
         }
 
+        // 相容 Journal 與吐槽牆的欄位，防止 UI 崩潰
+        function normalizeRecord(record) {
+            return {
+                id: record.id || record.ID || "",
+                createdAt: record.createdAt || record.CreatedAt || "",
+                content: record.content || record.Content || "",
+                category: record.category || record.Category || "其他",
+                likes: Number(record.likes !== undefined ? record.likes : (record.Likes || 0)),
+                status: record.status || record.Status || "active",
+                // 保留 Journal 專用欄位
+                mood: record.mood || record.Mood || "happy",
+                tags: record.tags || record.Tags || [],
+                isFavorite: record.isFavorite !== undefined ? record.isFavorite : (record.IsFavorite || false)
+            };
+        }
+
+        async function fetchRecordsFromSheet() {
+            if (APPS_SCRIPT_URL.includes("PASTE")) return null;
+            try {
+                const res = await fetch(APPS_SCRIPT_URL);
+                const data = await res.json();
+                return Array.isArray(data.records) ? data.records.map(normalizeRecord) : null;
+            } catch (e) {
+                console.warn("從 Sheet 讀取失敗", e);
+                return null;
+            }
+        }
+
+        // --- AI 摘要 Helper ---
+        async function askAI(userPrompt) {
+            const res = await fetch(APPS_SCRIPT_URL, {
+                method: "POST",
+                headers: { "Content-Type": "text/plain" },
+                body: JSON.stringify({ action: "askAI", prompt: userPrompt })
+            });
+            const data = await res.json();
+            return data.result || data.error || "AI 冇回應";
+        }
+
+        async function handleAISummary() {
+            const btn = document.getElementById('aiBtn');
+            const text = document.getElementById('aiBtnText');
+            btn.disabled = true;
+            text.textContent = '思考中...';
+            try {
+                const records = await loadData();
+                if (records.length === 0) { alert('未有吐槽資料可以摘要'); return; }
+                const summaryInput = records.slice(0, 30).map(r =>
+                    `[${r.category || r.mood}] ${r.content}`
+                ).join('\n');
+                const prompt = '以下是班級吐槽牆嘅留言。請用繁體中文，用 3-5 句概括同學最關心嘅問題、情緒同有冇明顯 patterns:\n\n' + summaryInput;
+                const result = await askAI(prompt);
+                alert(result);
+            } catch (e) {
+                alert('AI 出錯：' + e.message);
+            } finally {
+                btn.disabled = false;
+                text.textContent = 'AI 摘要';
+            }
+        }
+
         // --- 核心變數 ---
         let currentMood = 'happy';
         let currentEntryStatus = 'active';
@@ -194,53 +258,72 @@
         let filterMood = 'all';
         let searchQuery = '';
 
-        // --- 資料操作 ---
-        function loadData() {
-            const raw = localStorage.getItem('records');
-            return raw ? JSON.parse(raw) : [];
+        // --- 資料操作 (Async 化) ---
+        async function loadData() {
+            const remote = await fetchRecordsFromSheet();
+            if (remote) {
+                localStorage.setItem("records", JSON.stringify(remote));
+                return remote;
+            }
+            const data = localStorage.getItem("records");
+            return data ? JSON.parse(data) : [];
         }
 
-        function saveData(newRecord) {
-            const records = loadData();
-            records.unshift(newRecord);
-            localStorage.setItem('records', JSON.stringify(records));
+        async function saveData(newRecord) {
+            const records = await loadData();
+            // 使用 unshift 保持最新的在最上面，如果嚴格要求 push 可改為 push
+            records.unshift(newRecord); 
+            localStorage.setItem("records", JSON.stringify(records));
             syncToSheet({ action: "create", record: newRecord });
+            await renderList(records);
         }
 
-        function updateStatus(id, newStatus) {
-            const records = loadData();
+        async function updateStatus(id, newStatus) {
+            const records = await loadData();
             const index = records.findIndex(r => r.id === id);
             if (index !== -1) {
                 records[index].status = newStatus;
                 localStorage.setItem('records', JSON.stringify(records));
-                renderList();
                 syncToSheet({ action: "update", id: id, changes: { status: newStatus } });
+                await renderList(records);
             }
         }
 
-        function toggleFavorite(id) {
-            const records = loadData();
+        async function toggleFavorite(id) {
+            const records = await loadData();
             const index = records.findIndex(r => r.id === id);
             if (index !== -1) {
                 records[index].isFavorite = !records[index].isFavorite;
                 localStorage.setItem('records', JSON.stringify(records));
-                renderList();
                 syncToSheet({ action: "update", id: id, changes: { isFavorite: records[index].isFavorite } });
+                await renderList(records);
             }
         }
 
-        function deleteRecord(id) {
+        async function deleteRecord(id) {
             if (!confirm('確定要刪除這篇回憶嗎？')) return;
-            let records = loadData();
+            let records = await loadData();
             records = records.filter(r => r.id !== id);
             localStorage.setItem('records', JSON.stringify(records));
-            renderList();
             syncToSheet({ action: "delete", id: id });
+            await renderList(records);
         }
 
-        // --- 渲染 UI ---
-        function renderList() {
-            const records = loadData();
+        // 依據要求保留的 Like 功能 (給吐槽牆使用)
+        async function handleLike(id) {
+            const records = await loadData();
+            const index = records.findIndex(r => r.id === id);
+            if (index !== -1) {
+                records[index].likes = (records[index].likes || 0) + 1;
+                localStorage.setItem("records", JSON.stringify(records));
+                syncToSheet({ action: "update", id: id, changes: { likes: records[index].likes } });
+                await renderList(records);
+            }
+        }
+
+        // --- 渲染 UI (支援 Optimistic 覆寫) ---
+        async function renderList(recordsOverride) {
+            const records = recordsOverride || await loadData();
             const listContainer = document.getElementById('journal-list');
             const countLabel = document.getElementById('record-count');
             
@@ -268,8 +351,8 @@
                 const card = document.createElement('article');
                 card.className = `frosted-glass rounded-2xl p-6 relative group transition-all duration-500 ${r.status === 'completed' ? 'completed-card' : ''}`;
                 
-                const moodEmoji = { happy: '😊', neutral: '😐', tired: '😫', sad: '🌧️' }[r.mood];
-                const moodLabel = { happy: '開心', neutral: '平常', tired: '累了', sad: '憂鬱' }[r.mood];
+                const moodEmoji = { happy: '😊', neutral: '😐', tired: '😫', sad: '🌧️' }[r.mood] || '📝';
+                const moodLabel = { happy: '開心', neutral: '平常', tired: '累了', sad: '憂鬱' }[r.mood] || r.category || '記錄';
 
                 card.innerHTML = `
                     <button onclick="toggleFavorite('${r.id}')" class="absolute top-6 right-6 transition-colors ${r.isFavorite ? 'text-[var(--color-accent-star)]' : 'text-[rgba(255,255,255,0.4)] hover:text-[var(--color-text-main)]'}">
@@ -280,7 +363,7 @@
                             <span class="${r.status === 'completed' ? 'strikethrough' : ''}">${dateStr}</span>
                             <span class="font-mono opacity-60">${timeStr}</span>
                         </div>
-                        <span class="mr-8">${moodEmoji} ${moodLabel}</span>
+                        <span class="mr-8">${moodEmoji} ${moodLabel} ${r.likes ? `(❤️ ${r.likes})` : ''}</span>
                     </div>
                     <div class="text-[1.05rem] leading-[1.8] text-[var(--color-text-main)] whitespace-pre-wrap ${r.status === 'completed' ? 'strikethrough opacity-60' : ''}">${r.content}</div>
                     <div class="flex items-center justify-between mt-4">
@@ -308,7 +391,7 @@
         }
 
         // --- 事件處理 ---
-        function handleSave() {
+        async function handleSave() {
             const content = document.getElementById('entry-content').value.trim();
             const tagsInput = document.getElementById('entry-tags').value;
             if (!content) return;
@@ -320,16 +403,18 @@
                 createdAt: new Date().toISOString(),
                 content: content,
                 mood: currentMood,
+                category: "其他", // 相容吐槽牆
                 tags: tags,
                 isFavorite: false,
+                likes: 0, // 相容吐槽牆
                 status: currentEntryStatus 
             };
 
-            saveData(newRecord);
+            await saveData(newRecord);
+            
             document.getElementById('entry-content').value = '';
             document.getElementById('entry-tags').value = '';
             if (document.getElementById('composer-section').classList.contains('fixed')) toggleMobileComposer();
-            renderList();
         }
 
         function setMood(mood) {
@@ -343,16 +428,16 @@
             document.getElementById('btn-status-draft').className = status === 'draft' ? 'text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-[var(--color-text-main)] bg-[var(--color-text-main)] text-[var(--color-midnight)]' : 'text-[0.7rem] uppercase tracking-wider px-2 py-1 rounded border border-transparent text-[rgba(255,255,255,0.4)]';
         }
 
-        function setStatusFilter(status) {
+        async function setStatusFilter(status) {
             filterStatus = status;
             document.querySelectorAll('.status-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.status === status));
-            renderList();
+            await renderList();
         }
 
-        function setMoodFilter(mood) {
+        async function setMoodFilter(mood) {
             filterMood = mood;
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === mood));
-            renderList();
+            await renderList();
         }
 
         function toggleMobileComposer() {
@@ -364,23 +449,16 @@
             composer.classList.toggle('z-40');
         }
 
-        document.getElementById('search-input').addEventListener('input', (e) => {
+        document.getElementById('search-input').addEventListener('input', async (e) => {
             searchQuery = e.target.value;
-            renderList();
+            await renderList();
         });
 
         // --- 初始化 ---
         window.onload = async () => {
-            renderList(); // 先畫出 Local
-            if (APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes("PASTE")) {
-                try {
-                    const res = await fetch(APPS_SCRIPT_URL);
-                    const cloudData = await res.json();
-                    if (Array.isArray(cloudData)) {
-                        localStorage.setItem('records', JSON.stringify(cloudData));
-                        renderList();
-                    }
-                } catch (e) { console.log("Offline mode."); }
+            await renderList();
+            if (window.lucide) {
+                lucide.createIcons();
             }
         };
     </script>
