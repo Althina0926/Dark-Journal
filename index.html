@@ -211,7 +211,8 @@
             try {
                 const res = await fetch(APPS_SCRIPT_URL);
                 const data = await res.json();
-                return Array.isArray(data.records) ? data.records.map(normalizeRecord) : null;
+               const recordsArray = Array.isArray(data) ? data : (data.records || null);
+return recordsArray ? recordsArray.map(normalizeRecord) : null;
             } catch (e) {
                 console.warn("從 Sheet 讀取失敗", e);
                 return null;
